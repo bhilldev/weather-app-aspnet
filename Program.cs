@@ -5,6 +5,11 @@ builder.Services.AddControllersWithViews();
 
 builder.Services.AddHttpClient(); // Registers HttpClient with DI container
 builder.Configuration.AddEnvironmentVariables();
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = "localhost:6379"; // your Redis connection string
+    options.InstanceName = "WeatherApp_";     // optional prefix
+});
 
 var app = builder.Build();
 

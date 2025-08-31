@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using weather_app_aspnet.Models;
+using Microsoft.Extensions.Caching.Distributed;
 
 namespace weather_app_aspnet.Controllers;
 
@@ -8,21 +9,36 @@ namespace weather_app_aspnet.Controllers;
 [Route("api/[controller]")]
 public class HomeController : ControllerBase
 {
-    private readonly ILogger<HomeController> _logger;
+    private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
+    private readonly IDistributedCache _cache;
 
-    public HomeController(ILogger<HomeController> logger, HttpClient httpClient, IConfiguration configuration)
+    public HomeController(
+        ILogger<HomeController> logger,
+        HttpClient httpClient,
+        IConfiguration configuration,
+        IDistributedCache cache)
     {
         _logger = logger;
         _httpClient = httpClient;
         _apiKey = configuration["WeatherApikey"];
+        _cache = cache;
     }
-
     // 👇 Add route binding here
     [HttpGet("{zipCode}")]
     public async Task<IActionResult> GetApiData(string zipCode)
     {
+        string cacheKey = $"weather:{zipCode}";
+        var cachedData = await _cache.GetStringAsync(cacheKey);
+
+        if (!string.IsNullOrEmpty(cachedData))
+        {
+            _logger.LogInformation("Cache hit for {ZipCode}", zipCode);
+
+            var data = JsonSerializer.Deserialize<WeatherApiResponseModel>(cachedData);
+            return Ok(data);
+        }
         string url = $"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{zipCode}?key={_apiKey}";
         try
         {
@@ -43,6 +59,13 @@ public class HomeController : ControllerBase
                 _logger.LogWarning("Deserialized weather data was null for {Url}", url);
                 return NotFound("Weather data not found");
             }
+            await _cache.SetStringAsync(
+            cacheKey,
+            JsonSerializer.Serialize(data),
+            new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10)
+            });
 
             return Ok(data); // ✅ returns JSON automatically
         }
